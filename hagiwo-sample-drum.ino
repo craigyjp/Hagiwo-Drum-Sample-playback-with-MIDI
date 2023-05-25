@@ -4,20 +4,23 @@
 #include <EEPROM.h>
 #include <MIDI.h>
 
-#define TRIGGER D8
+#define TRIGGER D2
 #define FILTER_SW D4
+#define ENCB D1
+#define ENCA D10
+#define AUDIO D5
 #define MIDI_CHANNEL 1
 
-Encoder myEnc(D10, D9);    //rotary encoder
-float oldPosition = -999;  //rotary encoder
-float newPosition = -999;  //rotary encoder
+Encoder myEnc(ENCA, ENCB);    //rotary encoder
 
 float i;         //sample play progress
-float freq = 1;  //sample frequency
+float freq = 1;
+float midifreq = 0; //sample frequency
 bool trig1, old_trig1, done_trig1;
 int sound_out;       //sound out PWM rate
 byte sample_no = 1;  //select sample number
-
+static long encPrevious = 0;
+boolean encCW = true;
 long timer = 0;         //timer count for eeprom write
 bool eeprom_write = 0;  //0=no write,1=write
 
@@ -53,16 +56,16 @@ void setup() {
   }
 
   pinMode(TRIGGER, INPUT);     //trigger in
-  pinMode(D9, INPUT_PULLUP);   //rotary encoder
-  pinMode(D10, INPUT_PULLUP);  //rotary encoder
-  pinMode(D5, OUTPUT);         //sound_out PWM
+  pinMode(ENCA, INPUT_PULLUP);   //rotary encoder
+  pinMode(ENCB, INPUT_PULLUP);  //rotary encoder
+  pinMode(AUDIO, OUTPUT);         //sound_out PWM
   pinMode(FILTER_SW, OUTPUT);  //turns off the filter
   digitalWrite(FILTER_SW, LOW);
   timer = millis();  //for eeprom write
   analogReadResolution(10);
 
   ledcSetup(1, 39000, 10);  //PWM frequency and resolution
-  ledcAttachPin(D5, 1);     //(LED_PIN, LEDC_CHANNEL_0);//timer ch1 , apply D5 output
+  ledcAttachPin(AUDIO, 1);     //(LED_PIN, LEDC_CHANNEL_0);//timer ch1 , apply D5 output
 
   timer0 = timerBegin(0, 1666, true);            // timer0, 12.5ns*1666 = 20.83usec(48kHz), count-up
   timerAttachInterrupt(timer0, &onTimer, true);  // edge-triggered
@@ -71,8 +74,6 @@ void setup() {
 
   MIDI.begin(MIDI_CHANNEL);
   delay(300);
-  //MIDI.setHandleControlChange(myConvertControlChange);
-  //MIDI.setHandleProgramChange(myProgramChange);
 }
 
 void eeprom_update() {
@@ -94,7 +95,8 @@ void loop() {
         d2 = MIDI.getData2();
         switch (d1) {
           case 9:
-            freq = d2 * 0.016;
+            midifreq = d2 * 0.016;
+            freq = midifreq;
             break;
           case 10:
             if (d2 > 63) {
@@ -129,24 +131,24 @@ void loop() {
   }
 
   //-------------------------pitch setting----------------------------------
-  //freq = analogRead(A3) * 0.002 + analogRead(A0) * 0.002;
+  //freq = analogRead(A3) * 0.002 + midifreq; 
 
   //-------------------------sample change----------------------------------
-  newPosition = myEnc.read();
-  if ((newPosition - 3) / 4 > oldPosition / 4) {
-    oldPosition = newPosition;
-    sample_no = sample_no - 1;
-    if (sample_no < 0 || sample_no > 200) {  //>200 is overflow countermeasure
-      sample_no = 47;
+
+  long encRead = myEnc.read();
+  if ((encCW && encRead > encPrevious + 3) || (!encCW && encRead < encPrevious - 3)) {
+    encPrevious = encRead;
+    sample_no = sample_no + 1;
+    if (sample_no >= 48) {
+      sample_no = 0;
     }
     done_trig1 = 1;  //1 shot play when sample changed
     i = 0;
     timer = millis();
     eeprom_write = 1;  //eeprom update flug on
-  }
 
-  else if ((newPosition + 3) / 4 < oldPosition / 4) {
-    oldPosition = newPosition;
+  } else if ((encCW && encRead < encPrevious - 3) || (!encCW && encRead > encPrevious + 3)) {
+    encPrevious = encRead;
     sample_no = sample_no + 1;
     if (sample_no >= 48) {
       sample_no = 0;
