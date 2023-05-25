@@ -6,16 +6,16 @@
 
 #define TRIGGER D2
 #define FILTER_SW D4
-#define ENCB D1
-#define ENCA D10
+#define ENCB D10
+#define ENCA D1
 #define AUDIO D5
 #define MIDI_CHANNEL 1
 
-Encoder myEnc(ENCA, ENCB);    //rotary encoder
+Encoder myEnc(ENCA, ENCB);  //rotary encoder
 
-float i;         //sample play progress
+float i;  //sample play progress
 float freq = 1;
-float midifreq = 0; //sample frequency
+float midifreq = 0;  //sample frequency
 bool trig1, old_trig1, done_trig1;
 int sound_out;       //sound out PWM rate
 byte sample_no = 1;  //select sample number
@@ -55,17 +55,17 @@ void setup() {
     sample_no = 0;
   }
 
-  pinMode(TRIGGER, INPUT);     //trigger in
-  pinMode(ENCA, INPUT_PULLUP);   //rotary encoder
+  pinMode(TRIGGER, INPUT);      //trigger in
+  pinMode(ENCA, INPUT_PULLUP);  //rotary encoder
   pinMode(ENCB, INPUT_PULLUP);  //rotary encoder
-  pinMode(AUDIO, OUTPUT);         //sound_out PWM
-  pinMode(FILTER_SW, OUTPUT);  //turns off the filter
+  pinMode(AUDIO, OUTPUT);       //sound_out PWM
+  pinMode(FILTER_SW, OUTPUT);   //turns off the filter
   digitalWrite(FILTER_SW, LOW);
   timer = millis();  //for eeprom write
   analogReadResolution(10);
 
   ledcSetup(1, 39000, 10);  //PWM frequency and resolution
-  ledcAttachPin(AUDIO, 1);     //(LED_PIN, LEDC_CHANNEL_0);//timer ch1 , apply D5 output
+  ledcAttachPin(AUDIO, 1);  //(LED_PIN, LEDC_CHANNEL_0);//timer ch1 , apply D5 output
 
   timer0 = timerBegin(0, 1666, true);            // timer0, 12.5ns*1666 = 20.83usec(48kHz), count-up
   timerAttachInterrupt(timer0, &onTimer, true);  // edge-triggered
@@ -89,6 +89,19 @@ void loop() {
   if (MIDI.read(MIDI_CHANNEL)) {
     byte type = MIDI.getType();
     switch (type) {
+
+      case midi::NoteOn:
+        d1 = MIDI.getData1();
+        d2 = MIDI.getData2();
+        switch (d1) {
+          case 36:  // 36 for bottom C Bass
+            if (d2 != 0) {
+              done_trig1 = 1;
+              i = 0;
+            }
+            break;
+        }
+        break;
 
       case midi::ControlChange:
         d1 = MIDI.getData1();
@@ -131,7 +144,7 @@ void loop() {
   }
 
   //-------------------------pitch setting----------------------------------
-  //freq = analogRead(A3) * 0.002 + midifreq; 
+  //freq = analogRead(A3) * 0.002 + midifreq;
 
   //-------------------------sample change----------------------------------
 
@@ -149,9 +162,9 @@ void loop() {
 
   } else if ((encCW && encRead < encPrevious - 3) || (!encCW && encRead > encPrevious + 3)) {
     encPrevious = encRead;
-    sample_no = sample_no + 1;
-    if (sample_no >= 48) {
-      sample_no = 0;
+    sample_no = sample_no - 1;
+    if (sample_no < 0 || sample_no > 200) {  //>200 is overflow countermeasure
+      sample_no = 47;
     }
     done_trig1 = 1;  //1 shot play when sample changed
     i = 0;
